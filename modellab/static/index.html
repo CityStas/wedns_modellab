@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>modellab — тестер локальных моделей</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%235aa9ff' stroke-width='3'/%3E%3Cpath d='M16 16 L25 10' stroke='%233ddc97' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0e1116; --panel:#151a21; --panel2:#1b2129; --line:#252c36;
+    --fg:#e7ecf3; --dim:#8b97a8; --dim2:#5f6b7c;
+    --ok:#3ddc97; --warn:#f5b955; --bad:#ff6b6b; --acc:#5aa9ff; --acc2:#b98cff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:14px 18px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:15px;margin:0;letter-spacing:.3px}
+  header .ver{color:var(--dim2);font:11px var(--mono)}
+  header .spacer{flex:1}
+  .badge{font:11px var(--mono);padding:3px 8px;border-radius:20px;
+    border:1px solid var(--line);color:var(--dim);background:var(--panel)}
+  .badge.on{color:var(--ok);border-color:#1f4d3a;background:#12241c}
+  .badge.busy{color:var(--acc);border-color:#1d3a5c;background:#101d2b}
+  .badge.bad{color:var(--bad);border-color:#4d2020;background:#241212}
+
+  main{display:grid;gap:12px;padding:12px 18px 40px;
+    grid-template-columns:repeat(12,1fr);align-items:start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card h2{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);
+    margin:0 0 10px;font-weight:600}
+  .c-sys{grid-column:span 4} .c-gauge{grid-column:span 5} .c-mem{grid-column:span 3}
+  .c-ctrl{grid-column:span 4} .c-charts{grid-column:span 5} .c-eng{grid-column:span 3}
+  .c-log{grid-column:span 12}
+  @media(max-width:1100px){
+    .c-sys,.c-gauge,.c-mem,.c-ctrl,.c-charts,.c-eng{grid-column:span 12}
+  }
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12px}
+  .kv dt{color:var(--dim2)}
+  .kv dd{margin:0;font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+
+  .gauges{display:flex;gap:6px;justify-content:space-around;flex-wrap:wrap}
+  .gauge{text-align:center;min-width:150px}
+  .gauge svg{display:block;margin:0 auto}
+  .gauge .lbl{font-size:11px;color:var(--dim);margin-top:-6px}
+  .gauge .sub{font:10.5px var(--mono);color:var(--dim2);margin-top:3px}
+
+  .rows{display:flex;flex-direction:column;gap:9px}
+  .bar .top{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px}
+  .bar .top b{font-family:var(--mono);font-weight:500}
+  .bar .track{height:9px;border-radius:5px;background:var(--panel2);position:relative;overflow:hidden}
+  .bar .fill{height:100%;border-radius:5px;transition:width .25s ease}
+  .bar .mark{position:absolute;top:-2px;width:1px;height:13px;background:var(--warn);opacity:.85}
+  .bar .hint{font-size:10.5px;color:var(--dim2);margin-top:3px}
+
+  .stack{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)}
+  .stack i{display:block;height:100%}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font:10.5px var(--mono);color:var(--dim);margin-top:6px}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+  .form label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--dim)}
+  .form select,.form input{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+    border-radius:6px;padding:5px 7px;font:12px var(--mono);width:100%}
+  .form .wide{grid-column:span 2}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+    border-radius:7px;padding:7px 13px;font-size:12px;cursor:pointer}
+  button:hover:not(:disabled){border-color:#3a4553;background:#212934}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.p{background:#16324d;border-color:#24557f;color:#cfe6ff}
+  button.d{background:#3a1b1b;border-color:#5c2626;color:#ffd4d4}
+
+  canvas{width:100%;height:88px;display:block}
+  .chart-lbl{font:10.5px var(--mono);color:var(--dim2);margin:6px 0 -2px}
+
+  pre.log{margin:0;max-height:230px;overflow:auto;font:11px/1.5 var(--mono);
+    color:#c6d0dc;white-space:pre-wrap;overflow-wrap:anywhere}
+  pre.log .err{color:var(--bad)} pre.log .ok{color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font:11px var(--mono)}
+  th,td{text-align:left;padding:3px 8px 3px 0;border-bottom:1px solid var(--line)}
+  th{color:var(--dim2);font-weight:500}
+  .muted{color:var(--dim2)}
+  .warnbox{border:1px solid #5c3a1a;background:#241a10;border-radius:8px;padding:9px 11px;
+    font-size:11.5px;color:#ffd9a8}
+  .warnbox table{font-size:11px}
+  .warnbox td{border-bottom:1px solid #3a2a18}
+  .nowrap{white-space:nowrap}
+  .job{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .job .line{flex:1;height:3px;background:var(--panel2);border-radius:2px;overflow:hidden}
+  .job .line i{display:block;height:100%;width:30%;background:var(--acc);
+    animation:slide 1.2s ease-in-out infinite}
+  @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>modellab</h1><span class="ver" id="ver"></span>
+  <span class="spacer"></span>
+  <span class="badge" id="b-srv">сервер: —</span>
+  <span class="badge" id="b-job">простой</span>
+</header>
+
+<main>
+  <section class="card c-sys">
+    <h2>Система</h2>
+    <dl class="kv" id="sys"></dl>
+  </section>
+
+  <section class="card c-gauge">
+    <h2>Скорость</h2>
+    <div class="gauges">
+      <div class="gauge">
+        <svg id="g-gen" width="170" height="118" viewBox="0 0 170 118"></svg>
+        <div class="lbl">генерация, tok/s</div>
+        <div class="sub" id="g-gen-sub">нет замера</div>
+      </div>
+      <div class="gauge">
+        <svg id="g-pre" width="170" height="118" viewBox="0 0 170 118"></svg>
+        <div class="lbl">префилл, tok/s</div>
+        <div class="sub" id="g-pre-sub">нет замера</div>
+      </div>
+    </div>
+    <dl class="kv" id="meas" style="margin-top:10px"></dl>
+  </section>
+
+  <section class="card c-mem">
+    <h2>Память</h2>
+    <div class="rows" id="mem"></div>
+    <div id="pre" style="margin-top:9px"></div>
+  </section>
+
+  <section class="card c-ctrl">
+    <h2>Конфигурация</h2>
+    <div class="form" id="form">
+      <label class="wide">Модель<select id="f-model"></select></label>
+      <label>ctx<input id="f-ctx" type="number" value="65536" min="512" step="512"></label>
+      <label>ngl<input id="f-ngl" type="number" value="99" min="0" step="1"></label>
+      <label>load-mode<select id="f-load">
+        <option value="">авто</option><option value="none">none</option>
+        <option value="mmap">mmap</option><option value="mlock">mlock</option>
+        <option value="mmap+mlock">mmap+mlock</option><option value="dio">dio</option>
+      </select></label>
+      <label>KV-кеш<select id="f-kv">
+        <option value="q4_0">q4_0</option><option value="q8_0">q8_0</option>
+        <option value="f16">f16</option>
+      </select></label>
+      <label>промпт, симв.<input id="f-pc" type="number" value="400" min="8" step="50"></label>
+      <label>токенов<input id="f-mt" type="number" value="128" min="16" step="16"></label>
+      <label>повторов<input id="f-rep" type="number" value="2" min="1" max="9"></label>
+      <label>bench: -p / -n<input id="f-bench" type="text" value="512/128"></label>
+      <label class="wide">Куда выгрузить launcher (необязательно)
+        <input id="f-out" type="text" placeholder="E:\Programs\LocalLLM\bonsai\best.cmd"></label>
+      <label class="wide">Сравнить A/B<select id="f-ab">
+        <option value="load">режим загрузки: none против mmap</option>
+        <option value="kv" selected>KV-кеш: q4_0 против q8_0</option>
+        <option value="ckpt">чекпоинты контекста: по умолчанию против выключенных</option>
+      </select></label>
+    </div>
+    <div class="btns">
+      <button class="p" id="b-start">Поднять сервер</button>
+      <button class="p" id="b-measure">Замер</button>
+      <button id="b-bench">Потолок (llama-bench)</button>
+      <button id="b-search">Подбор конфига</button>
+      <button id="b-ab">Сравнить A/B</button>
+      <button class="d" id="b-stop">Стоп</button>
+    </div>
+    <div class="job" id="jobbar" style="display:none">
+      <span class="muted" id="jobname">—</span>
+      <span class="line"><i></i></span>
+      <span class="muted nowrap" id="jobtime"></span>
+    </div>
+  </section>
+
+  <section class="card c-charts">
+    <h2>Ход прогона</h2>
+    <div class="chart-lbl" id="lbl-ram">свободная память, МБ</div>
+    <canvas id="ch-ram" height="88"></canvas>
+    <div class="chart-lbl" id="lbl-tps">мгновенная скорость, tok/s</div>
+    <canvas id="ch-tps" height="88"></canvas>
+  </section>
+
+  <section class="card c-eng">
+    <h2>Что сказал движок</h2>
+    <div class="rows" id="eng"></div>
+    <dl class="kv" id="eng2" style="margin-top:8px"></dl>
+  </section>
+
+  <section class="card c-log">
+    <h2>Прогоны</h2>
+    <table id="hist"><thead><tr>
+      <th>tps</th><th>host_ratio</th><th>ctx</th><th>ngl</th><th>load-mode</th>
+    </tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:14px">Сравнение A/B</h2>
+    <div id="ab" class="muted">не запускалось</div>
+    <h2 style="margin-top:14px">Ход задачи</h2>
+    <pre class="log" id="joblog" style="max-height:170px">—</pre>
+    <h2 style="margin-top:14px">Лог сервера</h2>
+    <pre class="log" id="log">—</pre>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const fmt = (n, d = 0) => n == null || n === "" ? "—" : Number(n).toFixed(d);
+const pct = (a, b) => (!b ? null : Math.max(0, Math.min(100, a / b * 100)));
+let S = null, jobId = null, lastJob = null;
+
+/* ---------------- спидометр ---------------- */
+const A0 = 150, A1 = 390, R = 58, CX = 85, CY = 74;
+const pt = a => { const r = a * Math.PI / 180;
+  return [CX + R * Math.cos(r), CY + R * Math.sin(r)]; };
+
+function gauge(svg, val, max, sub) {
+  const track = [], [sx, sy] = pt(A0), [ex, ey] = pt(A1);
+  const d = `M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${R} ${R} 0 1 1 ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+  const frac = val != null && max > 0 ? Math.max(0, Math.min(1, val / max)) : 0;
+  const col = frac >= .6 ? "var(--ok)" : frac >= .3 ? "var(--warn)" : "var(--bad)";
+  const [tx, ty] = pt(A0 + frac * (A1 - A0));
+  const [bx, by] = pt(A0 + (A1 - A0));
+  const tickR1 = 48, tickR2 = 62;
+  svg.innerHTML = `
+    <path d="${d}" fill="none" stroke="var(--panel2)" stroke-width="9" stroke-linecap="round"/>
+    <path id="v" d="${d}" fill="none" stroke="${val == null ? 'var(--line)' : col}"
+          stroke-width="9" stroke-linecap="round"/>
+    <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="3.4"
+            fill="${val == null ? 'var(--line)' : col}"/>
+    <text x="${CX}" y="${CY + 2}" text-anchor="middle" fill="var(--fg)"
+          font-size="26" font-family="var(--mono)">${val == null ? "—" : fmt(val, 1)}</text>
+    <text x="${CX}" y="${CY + 20}" text-anchor="middle" fill="var(--dim2)"
+          font-size="10" font-family="var(--mono)">из ${fmt(max, 0)}</text>`;
+  const p = svg.querySelector("#v");
+  if (p) { const L = p.getTotalLength();
+    p.setAttribute("stroke-dasharray", `${L * frac} ${L}`); }
+  if (sub) svg.insertAdjacentHTML("beforeend", "");
+}
+
+/* ---------------- полосы памяти ---------------- */
+function bar(label, used, total, opts = {}) {
+  const p = pct(used, total);
+  const col = opts.color || (p == null ? "var(--line)"
+    : p > 92 ? "var(--bad)" : p > 80 ? "var(--warn)" : "var(--ok)");
+  const mark = opts.markPct != null
+    ? `<div class="mark" style="left:${Math.max(0, Math.min(100, opts.markPct))}%"></div>` : "";
+  return `<div class="bar">
+    <div class="top"><span>${label}</span>
+      <b>${used == null ? "—" : fmt(used)} / ${total == null ? "—" : fmt(total)}
+      ${p == null ? "" : `· ${fmt(p, 0)}%`}</b></div>
+    <div class="track">${mark}
+      <div class="fill" style="width:${p == null ? 0 : p}%;background:${col}"></div></div>
+    ${opts.hint ? `<div class="hint">${opts.hint}</div>` : ""}</div>`;
+}
+
+/* ---------------- графики ---------------- */
+function drawSeries(canvas, rows, pick, color, mark) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const vals = rows.map(pick).filter(v => v != null);
+  if (vals.length < 2) {
+    g.fillStyle = "#5f6b7c"; g.font = "11px monospace";
+    g.fillText("данных пока нет", 8, h / 2);
+    return;
+  }
+  const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .15 || 1;
+  const y = v => h - 6 - (v - lo + pad) / (hi - lo + pad * 2) * (h - 12);
+  const x = i => i / (rows.length - 1) * w;
+  g.strokeStyle = "#252c36"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, y(lo)); g.lineTo(w, y(lo)); g.stroke();
+  if (mark != null && mark > lo) {
+    g.strokeStyle = "#f5b955"; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(0, y(mark)); g.lineTo(w, y(mark)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = "#f5b955"; g.font = "10px monospace";
+    g.fillText(fmt(mark, 0), 3, y(mark) - 3);
+  }
+  g.strokeStyle = color; g.lineWidth = 1.6; g.beginPath();
+  rows.forEach((r, i) => { const v = pick(r); if (v == null) return;
+    i === 0 ? g.moveTo(x(i), y(v)) : g.lineTo(x(i), y(v)); });
+  g.stroke();
+  g.fillStyle = "#8b97a8"; g.font = "10px monospace";
+  g.fillText(fmt(hi, 0), 3, 11); g.fillText(fmt(lo, 0), 3, h - 3);
+}
+
+/* ---------------- отрисовка ---------------- */
+function renderSys(sys) {
+  const g = sys.gpu || {}, c = sys.cpu || {}, m = sys.mem || {}, v = sys.exe_version || {};
+  const vr = g.vram_free_mb != null
+    ? `${fmt(g.vram_free_mb)} / ${fmt(g.vram_total_mb)} МБ`
+    : `${fmt(g.vram_total_mb)} МБ (свободно: нет данных)`;
+  const src = g.source ? ` <span class="muted">(${g.source})</span>` : "";
+  $("sys").innerHTML = `
+    <dt>CPU</dt><dd>${c.name || "—"}${c.physical ? ` · ${c.physical} ядер / ${c.logical} потоков` : ""}</dd>
+    <dt>GPU</dt><dd>${g.name || "—"}</dd>
+    <dt>VRAM</dt><dd>${vr}${src}</dd>
+    <dt>RAM</dt><dd>${fmt(m.total_mb)} МБ всего · ${fmt(m.avail_mb)} свободно</dd>
+    <dt>Коммит</dt><dd>${fmt(m.commit_avail_mb)} / ${fmt(m.commit_limit_mb)} МБ</dd>
+    <dt>Движок</dt><dd>${v.version || "—"}${v.build ? ` (b${v.build})` : ""}</dd>
+    <dt>Бинарник</dt><dd class="muted">${(sys.exe || {}).path || "не найден"}</dd>
+    ${(g.notes || []).length ? `<dt>NVML</dt><dd class="muted">${g.notes.join("; ")}</dd>` : ""}`;
+  $("ver").textContent = sys.bench_exe ? "llama-bench найден" : "llama-bench не найден";
+}
+
+function renderPre(pre) {
+  const el = $("pre");
+  if (!pre || pre.avail_mb == null) { el.innerHTML = ""; return; }
+  if (pre.ok) {
+    el.innerHTML = `<div class="muted">память: свободно ${fmt(pre.avail_mb)} МБ,
+      конфигу нужно ~${fmt(pre.need_mb)} МБ, порог ${fmt(pre.floor_mb)} МБ — можно запускать</div>`;
+    return;
+  }
+  const rows = (pre.top || []).slice(0, 5).map(r =>
+    `<tr><td>${r.name}</td><td>${fmt(r.ws_mb)} МБ</td><td class="muted">pid ${r.pid}</td></tr>`).join("");
+  el.innerHTML = `<div class="warnbox">
+    <div><b>Прогон заблокирован:</b> ${pre.reason}</div>
+    <table style="margin-top:6px">${rows}</table>
+    <div class="muted" style="margin-top:6px">Закрой лишнее и нажми кнопку ещё раз —
+      приложение намеренно не запускает модель, когда машине не хватит памяти.</div>
+  </div>`;
+}
+
+function renderMem(mem, eng, lm) {
+  const s = mem.system || {}, total = s.total_mb, avail = s.avail_mb;
+  const used = total && avail != null ? total - avail : null;
+  const ws = mem.proc_ws_mb, model = mem.model_size_mb || (lm || {}).model_size_mb;
+  const hr = mem.host_ratio;
+  const dev = (eng.devices || {})["CUDA0"] || {};
+  const vramTotal = eng.vram_total_mb || (dev.total_mb);
+  const vramUsed = eng.vram_mib;
+
+  const floor = 1500;
+  let html = "";
+  html += bar("Физическая RAM (занято)", used, total,
+    { markPct: total ? (total - floor) / total * 100 : null,
+      hint: `свободно ${fmt(avail)} МБ. Жёлтая метка — порог сторожа: `
+          + `ниже ${floor} МБ свободных прогон прерывается. `
+          + (avail != null && avail < floor ? "⚠ уже ниже порога" : "запас есть") });
+  html += bar("Рабочий набор сервера", ws, model,
+    { color: hr == null ? "var(--line)" : hr > .8 ? "var(--bad)" : hr > .45 ? "var(--warn)" : "var(--ok)",
+      hint: hr == null ? "модель не запущена"
+        : `host_ratio ${fmt(hr, 2)} — ${hr > .8
+            ? "движок держит копию весов в системной памяти: включи --load-mode none"
+            : hr > .45
+              ? "копии весов нет, но набор вырос: копятся контрольные точки "
+                + "контекста (по 149 МБ, до 32 штук) — для долгого сеанса "
+                + "--cache-ram 0 --ctx-checkpoints 0"
+              : "копия весов отпущена, память свободна"}` });
+  html += bar("Занято видеопамяти", vramUsed, vramTotal,
+    { hint: vramTotal ? `проекция движка до загрузки: ${fmt(eng.projected_vram_mb)} МБ, `
+        + `свободно было ${fmt(eng.vram_free_mb)} МБ` : "нет данных о VRAM" });
+  if (dev.model_mb) {
+    const tot = dev.model_mb + dev.context_mb + dev.compute_mb || 1;
+    const seg = (v, c, n) => `<i style="width:${v / tot * 100}%;background:${c}" title="${n}: ${v} МБ"></i>`;
+    html += `<div class="bar"><div class="top"><span>Раскладка бюджета VRAM</span>
+      <b>${fmt(dev.self_mb)} МБ</b></div>
+      <div class="stack">${seg(dev.model_mb, "var(--acc)", "веса")}
+        ${seg(dev.context_mb, "var(--acc2)", "контекст")}
+        ${seg(dev.compute_mb, "var(--warn)", "вычисления")}</div>
+      <div class="legend"><span><i style="background:var(--acc)"></i>веса ${dev.model_mb}</span>
+        <span><i style="background:var(--acc2)"></i>контекст ${dev.context_mb}</span>
+        <span><i style="background:var(--warn)"></i>вычисления ${dev.compute_mb}</span></div></div>`;
+  }
+  $("mem").innerHTML = html;
+}
+
+function renderEng(eng) {
+  const lm = (S && S.server && S.server.cfg || {}).load_mode || eng.load_mode;
+  let html = "";
+  if (!eng || !Object.keys(eng).length) {
+    html = `<div class="muted">движок ещё не запускался</div>`;
+  } else {
+    if (eng.vram_hint) html += `<div class="muted">${eng.vram_hint}</div>`;
+    if (eng.note) html += `<div style="color:var(--warn)">${eng.note}</div>`;
+    if (eng.errors) html += eng.errors.map(e => `<div class="err" style="color:var(--bad)">${e}</div>`).join("");
+  }
+  $("eng").innerHTML = html || `<div class="muted">замечаний нет</div>`;
+  const layers = eng.layers_gpu != null ? `${eng.layers_gpu}/${eng.layers_total}` : "—";
+  const lmBadge = lm === "none"
+    ? `<span style="color:var(--ok)">none</span>`
+    : lm === "mmap" ? `<span style="color:var(--warn)">mmap</span>` : (lm || "—");
+  $("eng2").innerHTML = `
+    <dt>load-mode</dt><dd>${lmBadge}</dd>
+    <dt>слоёв на GPU</dt><dd>${layers}</dd>
+    <dt>graph splits</dt><dd>${eng.graph_splits != null ? eng.graph_splits : "—"}${
+      eng.graph_splits > 2 ? ` <span style="color:var(--warn)">рвётся</span>` : ""}</dd>
+    <dt>ctx движка</dt><dd>${fmt(eng.n_ctx)}</dd>
+    <dt>буферы VRAM</dt><dd>${fmt(eng.vram_mib)} МБ</dd>
+    <dt>буферы хоста</dt><dd>${fmt(eng.host_mib)} МБ</dd>`;
+}
+
+function renderMeasure(m, bench) {
+  if (!m || !m.ok) {
+    $("meas").innerHTML = m && m.err ? `<dt>ошибка</dt><dd style="color:var(--bad)">${m.err}</dd>` : "";
+    gauge($("g-gen"), null, bench && bench.tg || 100);
+    gauge($("g-pre"), null, bench && bench.pp || 1000);
+    $("g-gen-sub").textContent = "нет замера"; $("g-pre-sub").textContent = "нет замера";
+    return;
+  }
+  const ceil = bench && bench.tg;
+  // Процент от потолка считаем и здесь: замер мог быть сделан до того, как
+  // потолок измерили, и тогда в результате его просто нет.
+  const cpc = m.ceiling_pct != null ? m.ceiling_pct
+    : (ceil && m.tps_steady ? m.tps_steady / ceil * 100 : null);
+  // Скорость префилла сильно зависит от длины промпта, поэтому потолок
+  // llama-bench (pp512) годится в максимум шкалы только когда измеренный
+  // промпт сопоставим по длине. На коротком промпте шкала берётся по факту,
+  // а потолок показывается числом в подписи.
+  const ptok = m.prompt_tokens || 0;
+  const ppCeil = bench && bench.pp && ptok >= 400 ? bench.pp : null;
+  gauge($("g-gen"), m.tps_steady, ceil || Math.max(m.tps_steady * 1.4, 1));
+  gauge($("g-pre"), m.prefill_tps, ppCeil || Math.max(m.prefill_tps * 1.4, 1));
+  $("g-gen-sub").textContent = ceil
+    ? `потолок llama-bench ${fmt(ceil)} tok/s · ${fmt(cpc, 0)}% от него`
+    : "потолок не измерен (кнопка «Потолок»)";
+  $("g-pre-sub").textContent = `промпт ${fmt(ptok)} токенов`
+    + (bench && bench.pp ? ` · pp512 ${fmt(bench.pp)} tok/s` : "");
+  $("meas").innerHTML = `
+    <dt>TTFT</dt><dd>${fmt(m.ttft_s, 2)} с</dd>
+    <dt>разброс</dt><dd>±${fmt(m.tps_steady_spread, 1)} tok/s · дрожание ${fmt(m.jitter_pct, 1)}%</dd>
+    <dt>мс/токен</dt><dd>${fmt(m.ms_per_token, 1)}</dd>
+    <dt>host_ratio</dt><dd>${fmt(m.host_ratio, 2)}</dd>
+    <dt>минимум RAM</dt><dd>${fmt((m.mem || {}).min_avail_mb)} МБ</dd>
+    <dt>движок говорит</dt><dd>${fmt(m.server_tps, 1)} tok/s (агрегат)</dd>
+    <dt>токенов</dt><dd>${fmt(m.completion_tokens)} из ${fmt(m.max_tokens)}</dd>`;
+}
+
+function renderHist(rows) {
+  $("hist").querySelector("tbody").innerHTML = (rows || []).slice().reverse().map(r =>
+    `<tr><td>${fmt(r.tps, 1)}</td><td>${fmt(r.host_ratio, 2)}</td><td>${fmt(r.ctx)}</td>
+     <td>${fmt(r.ngl)}</td><td>${r.load_mode || "—"}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="muted">пока пусто</td></tr>`;
+}
+
+function renderJob(j) {
+  const bar = $("jobbar"), b = $("b-job");
+  const busy = !!(j && j.state === "running");
+  // Разблокировка идёт ДО раннего выхода. Раньше цикл стоял в конце, а при
+  // завершённом задании state() отдаёт job = null и функция выходила раньше
+  // него: кнопки, заблокированные на время прогона, оставались
+  // заблокированными навсегда, и со страницы можно было запустить ровно один
+  // прогон. Заметно только при нажатии кнопок руками - через API не видно.
+  ["b-start", "b-measure", "b-bench", "b-search", "b-ab", "b-stop"].forEach(id => {
+    $(id).disabled = busy && id !== "b-stop";
+  });
+  if (!j) {
+    bar.style.display = "none";
+    b.textContent = "простой"; b.className = "badge";
+    return;
+  }
+  if (busy) {
+    bar.style.display = "flex";
+    $("jobname").textContent = `${j.kind} · ${j.progress || "…"}`;
+    $("jobtime").textContent = `${fmt(j.elapsed, 0)} с`;
+    b.textContent = `${j.kind}: идёт`; b.className = "badge busy";
+  } else {
+    bar.style.display = "none";
+    const ok = j.state === "done";
+    b.textContent = `${j.kind}: ${ok ? "готово" : j.state}`;
+    b.className = "badge " + (ok ? "on" : "bad");
+  }
+  const jl = $("joblog");
+  if (j.log && j.log.length) {
+    jl.textContent = j.log.join("\n");
+    jl.scrollTop = jl.scrollHeight;
+  } else if (j.state !== "running") {
+    jl.textContent = "—";
+  }
+}
+
+/* ---------------- связь ---------------- */
+async function api(path, body) {
+  const r = await fetch(path, body ? {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) } : undefined);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+async function tick() {
+  try {
+    const s = await api("/api/state");
+    S = s;
+    renderSys(s.system);
+    renderJob(s.job);
+    renderAb();
+    renderPre(s.preflight);
+    renderMeasure(s.last_measure, s.last_bench);
+    renderMem(s.mem, s.engine, s.last_measure);
+    renderEng(s.engine);
+    renderHist(s.history);
+    const sv = s.server || {};
+    const bs = $("b-srv");
+    if (sv.running) { bs.textContent = `сервер: порт ${sv.port}, pid ${sv.pid}, ${fmt(sv.uptime_s, 0)} с`;
+      bs.className = "badge on"; }
+    else { bs.textContent = "сервер: остановлен"; bs.className = "badge"; }
+
+    const ram = (s.timeline || []).map(r => ({ t: r[0], v: r[1] }));
+    $("lbl-ram").textContent = `свободная память во время прогона, МБ`
+      + (ram.length ? ` (минимум ${fmt(Math.min(...ram.map(r => r.v)))})` : "");
+    drawSeries($("ch-ram"), ram, r => r.v, "#5aa9ff", 1500);
+    const ser = (s.last_measure || {}).tps_series || [];
+    drawSeries($("ch-tps"), ser.map(v => ({ v })), r => r.v, "#3ddc97",
+      (s.last_bench || {}).tg);
+    const log = await api("/api/log?tail=160");
+    $("log").textContent = log.log || "—";
+    $("log").scrollTop = $("log").scrollHeight;
+  } catch (e) {
+    $("b-job").textContent = "нет связи: " + e.message;
+    $("b-job").className = "badge bad";
+  }
+}
+
+async function fire(path, body, name) {
+  try {
+    const j = await api(path, body || {});
+    lastJob = j.id; jobId = j.id;
+    renderJob(j);
+    setTimeout(tick, 300);
+  } catch (e) {
+    $("b-job").textContent = `${name}: ${e.message}`;
+    $("b-job").className = "badge bad";
+  }
+}
+
+function cfg() {
+  const o = {
+    model: $("f-model").value,
+    ctx: +$("f-ctx").value, ngl: +$("f-ngl").value,
+    cache_type_k: $("f-kv").value, cache_type_v: $("f-kv").value,
+  };
+  const lm = $("f-load").value;
+  if (lm) o.load_mode = lm;
+  return o;
+}
+const benchPair = () => ($("f-bench").value || "512/128").split("/").map(Number);
+
+$("b-start").onclick = () => fire("/api/start", cfg(), "подъём");
+$("b-measure").onclick = () => fire("/api/measure", {
+  prompt_chars: +$("f-pc").value, max_tokens: +$("f-mt").value,
+  repeats: +$("f-rep").value }, "замер");
+$("b-bench").onclick = () => {
+  const [p, n] = benchPair();
+  fire("/api/bench", { model: $("f-model").value, ngl: +$("f-ngl").value,
+    p: p || 512, n: n || 128, r: 3, fa: 1, ctk: $("f-kv").value, ctv: $("f-kv").value }, "bench");
+};
+$("b-search").onclick = () => fire("/api/search", {
+  model: $("f-model").value, ngl: +$("f-ngl").value,
+  cache_type_k: $("f-kv").value, cache_type_v: $("f-kv").value,
+  ctx_min: 4096, ctx_mid: 32768, attempts: 3,
+  prompt_chars: +$("f-pc").value, max_tokens: +$("f-mt").value,
+  repeats: +$("f-rep").value,
+  export: $("f-out").value.trim() || null }, "подбор");
+$("b-stop").onclick = () => fire("/api/stop", {}, "стоп");
+
+/* ---------------- сравнение A/B ----------------
+   Перемежающееся сравнение: A, B, A, B, ... Смысл в том, что однократное
+   «замерить A, замерить B и сравнить» на этой машине измеряет шум, а не
+   эффект: одна и та же конфигурация в соседних прогонах давала 8.12 и 15.38
+   tok/s. Поэтому вариантов ровно два, прогоны чередуются, и вердикт
+   выносится по знаку разности внутри пар, а не по средним.
+
+   ctx передаётся в каждый вариант явно: у ServerConfig дефолт 65536, и без
+   этого сравнение шло бы не на том контексте, что стоит в форме. Меняться
+   должен ровно один параметр, иначе разность нечего приписывать. */
+const AB = {
+  load: [{ name: "load-mode none", load_mode: "none" },
+         { name: "load-mode mmap", load_mode: "mmap" }],
+  kv:   [{ name: "KV q4_0", cache_type_k: "q4_0", cache_type_v: "q4_0" },
+         { name: "KV q8_0", cache_type_k: "q8_0", cache_type_v: "q8_0" }],
+  ckpt: [{ name: "чекпоинты вкл" },
+         { name: "чекпоинты выкл", cache_ram: 0, ctx_checkpoints: 0 }],
+};
+
+$("b-ab").onclick = () => {
+  const ctx = +$("f-ctx").value;
+  const variants = (AB[$("f-ab").value] || AB.kv).map(v => ({ ...v, ctx }));
+  // Пар меньше трёх не хватает, чтобы знак разности что-то значил.
+  const repeats = Math.max(3, +$("f-rep").value);
+  fire("/api/ab", {
+    model: $("f-model").value, variants, repeats,
+    prompt_chars: +$("f-pc").value, max_tokens: +$("f-mt").value,
+  }, "A/B");
+};
+
+function renderAb() {
+  const el = $("ab");
+  // Берём из состояния, а не из текущего задания: задание обнуляется сразу
+  // после завершения, и сравнение исчезало бы с экрана.
+  const r = S && S.last_ab;
+  if (!r || !r.rows || !r.rows.length) {
+    el.className = "muted"; el.textContent = "не запускалось";
+    return;
+  }
+  const v = r.verdict || {};
+  const proved = v.same_sign && Math.abs(v.mean_delta || 0) > 0.5;
+  el.className = "";
+  const rows = r.rows.map(x => `<tr>
+      <td>${x.rep + 1}</td><td>${x.variant}</td>
+      <td>${fmt(x.tps, 2)}</td><td>${fmt(x.vram_mib)}</td>
+      <td>${fmt(x.context_mb)}</td><td>${fmt(x.ws_mb)}</td>
+      <td>${fmt(x.host_ratio, 2)}</td><td>${x.cache_n == null ? "—" : x.cache_n}</td>
+      <td>${x.ok ? "да" : `<span style="color:var(--bad)">нет</span>`}</td></tr>`).join("");
+  const sum = (r.summary || []).map(s => s.n
+    ? `<li>${s.variant}: среднее ${fmt(s.mean_tps, 2)} tok/s, `
+      + `разброс ${fmt(s.spread, 2)} (${fmt(s.min_tps, 2)}…${fmt(s.max_tps, 2)})`
+      + (s.mean_vram_mib != null ? `, буферы VRAM ${fmt(s.mean_vram_mib)} МБ` : "")
+      + (s.mean_context_mb != null ? ` (из них контекст ${fmt(s.mean_context_mb)} МБ)` : "")
+      + `</li>`
+    : `<li>${s.variant}: прогонов не было</li>`).join("");
+  el.innerHTML = `
+    <div style="color:${proved ? "var(--ok)" : "var(--warn)"};margin-bottom:6px">
+      ${v.conclusion || "вердикт не вынесен"}
+    </div>
+    <div class="muted" style="margin-bottom:6px">
+      разности внутри пар: ${(v.deltas || []).join(", ")} tok/s
+      ${v.same_sign ? "· знак одинаковый" : "· знак меняется"}
+    </div>
+    <ul style="margin:6px 0 8px 18px">${sum}</ul>
+    <table><thead><tr><th>пара</th><th>вариант</th><th>tok/s</th>
+      <th>VRAM, МБ</th><th>контекст, МБ</th><th>рабочий набор, МБ</th>
+      <th>host_ratio</th><th>из кеша</th><th>ок</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function init() {
+  const ms = await api("/api/models");
+  const sel = $("f-model");
+  sel.innerHTML = ms.map(m => `<option value="${m.path}">${m.name} — ${fmt(m.size_mb)} МБ`
+    + `${m.arch ? ` · ${m.arch}` : ""}${m.layers ? ` · ${m.layers} сл.` : ""}</option>`).join("");
+  // В списке должна стоять та модель, которая реально измерялась, а не первая
+  // подходящая по размеру: иначе цифры на спидометрах относятся к одной модели,
+  // а в списке выбрана другая, и это вводит в заблуждение. Сравниваем
+  // нормализованно: путь приходит то с прямыми слэшами, то с обратными.
+  const norm = p => String(p || "").replace(/\\/g, "/").toLowerCase();
+  const st = await api("/api/state");
+  const cur = norm((st.last_config || {}).model
+    || ((st.server || {}).cfg || {}).model
+    || ((st.last_measure || {}).model));
+  const hit = cur && ms.find(m => norm(m.path) === cur);
+  if (hit) sel.value = hit.path;
+  else {
+    const big = ms.filter(m => (m.size_mb || 0) > 4000);
+    if (big.length) sel.value = big[0].path;
+  }
+  const v = await api("/api/version");
+  if (v.version) document.title = `modellab ${v.version}`;
+  await tick();
+}
+setInterval(tick, 1200);
+init();
+</script>
+</body>
+</html>
